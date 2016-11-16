@@ -10,7 +10,8 @@ var Twitter = require('node-tweet-stream'),
     remedyConnectionProperties = require('./remedy-connection');
 t = new Twitter(twitterSecrets),
     remedy = rem(remedyConnectionProperties);
-    //A template for our broadcasts, 
+//A template for our broadcasts,
+ 
 var templateBroadcast = {
     "BroadcastSubject": "",
     "Company": "Calbro Services",
@@ -24,10 +25,31 @@ var templateBroadcast = {
     "z1D View Access": "Public",
     "z1D Current BroadcastOperation": "CREATE"
 };
-var download = function(uri, filename, callback) {
-    request.head(uri, function(err, res, body) {
-        request(uri).pipe(fs.createWriteStream(filename)).on('close', callback);
+var path;
+var filename;
+var download = function(uri, path, filename, callback) {
+    async.series([
+        function(cb) {
+            //Check if directory exists if not create it.
+            fs.lstat(path, function(err, stats) {
+                if (!err && stats.isDirectory()) {
+                    cb();
+                } else {
+                    fs.mkdir(path, function(err) {
+                        cb(err);
+                    })
+                }
+            })
+        },
+        function(cb) {
+            request.head(uri, function(err, res, body) {
+                request(uri).pipe(fs.createWriteStream(path + filename)).on('close', cb);
+            });
+        }
+    ],function(err){
+        callback(err);
     });
+
 };
 var loginRemedyAndDownloadTweetmedia = function(tweet, callback) {
     /*
@@ -52,7 +74,9 @@ var loginRemedyAndDownloadTweetmedia = function(tweet, callback) {
             var uriparts = tweet.media_url.split('/');
             filename = uriparts[uriparts.length - 1];
             path = __dirname + "/.tmp/";
-            download(tweet.media_url, path + filename, innercb);
+            tweet.filename=filename;
+            tweet.path=path;
+            download(tweet.media_url, path, filename, innercb);
         }
     ], function(err) {
         //This c
@@ -69,6 +93,7 @@ var createBroadcast = function(tweet, callback) {
     and do a create on the TicketNumGenerator. We use the returned entry ID, should be the same as LASTID()
     when we create the broadcast. These operations has to done in order so we use async.series
     */
+    var broadcastnumber;
     async.series([
         function generateTicketNumber(cb) {
             remedy.post({
@@ -84,6 +109,7 @@ var createBroadcast = function(tweet, callback) {
                 if (err) {
                     console.log(err.statusCode);
                     console.log(err.data.toString());
+                    cb(err);
                 } else {
                     broadcastnumber = data.entryId;
                     cb();
@@ -98,10 +124,10 @@ var createBroadcast = function(tweet, callback) {
             templateBroadcast["Broadcast Number"] = broadcastnumber;
             var attachments = null;
             if (tweet.media_url) {
-                templateBroadcast["z2AF_BroadcastAttachment"] = filename;
+                templateBroadcast["z2AF_BroadcastAttachment"] = tweet.filename;
                 attachments = {
                     "z2AF_BroadcastAttachment": {
-                        path: path + filename
+                        path: tweet.path + tweet.filename
                     }
                 }
             } else
@@ -137,9 +163,6 @@ var createBroadcast = function(tweet, callback) {
     });
 }
 var remedypush = function(tweet, callback) {
-    var filename = "";
-    var path = "";
-    var broadcastnumber = "";
     /*
           We want to do the following:
           1.Log in to remedy
