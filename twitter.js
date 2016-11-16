@@ -119,7 +119,7 @@ var createBroadcast = function(tweet, callback) {
                 data: data
             }, function(err, data) {
                 if (err) {
-                    console.log(Chalk.red("ARS Error:"));
+                    console.log(chalk.red("ARS Error:"));
                     console.log(err.data.toString());
                     cb(err);
                 } else {
